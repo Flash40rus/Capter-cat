@@ -28,16 +28,12 @@
     border-radius:50%;
     border:2px solid #ffb37a;
     box-shadow:0 2px 8px rgba(0,0,0,.5);
-    background:#3a2a45; display:block;
+    background:#3a2a45;
+    display:block;
   }
   #lives { letter-spacing:1px; font-size:15px; }
   #lives .lost { opacity:.2; }
   #score { font-variant-numeric:tabular-nums; }
-  #hint {
-    position:fixed; bottom:8px; left:0; right:0;
-    text-align:center; color:rgba(255,255,255,.35);
-    font-size:11px; pointer-events:none; z-index:10;
-  }
 </style>
 </head>
 <body>
@@ -47,24 +43,23 @@
   <div id="lives"></div>
   <div id="score">0</div>
 </div>
-<div id="hint">Клавиша D — показать хитбоксы</div>
 <script>
 (() => {
 'use strict';
 
 // ═══════════════════════════════════════════
-//  ПАЛИТРА КОТА
+//  ПАЛИТРА КОТА (подобрана под твоё фото)
 // ═══════════════════════════════════════════
 const C = {
-  FUR:       '#94876b',
-  FUR_DARK:  '#4f4534',
-  FUR_LIGHT: '#aaa08a',
-  WHITE:     '#faf5eb',
-  PINK:      '#e08a8a',
-  EAR_PINK:  '#e8a5a5',
-  EYE:       '#c8d15a',
-  EYE_DARK:  '#1a1a12',
-  CLAW:      '#3a3226',
+  FUR:       '#94876b',  // основной серо-коричневый мех
+  FUR_DARK:  '#4f4534',  // тёмные полоски
+  FUR_LIGHT: '#aaa08a',  // светлые участки
+  WHITE:     '#faf5eb',  // грудка, носочки, морда
+  PINK:      '#e08a8a',  // нос
+  EAR_PINK:  '#e8a5a5',  // внутренние уши
+  EYE:       '#c8d15a',  // жёлто-зелёная радужка
+  EYE_DARK:  '#1a1a12',  // зрачок
+  CLAW:      '#3a3226',  // коготки
 };
 
 // ═══════════════════════════════════════════
@@ -97,7 +92,6 @@ const JUMP_V = -16.5;
 const MAX_JUMPS = 2;
 const CAT_W = 110;
 const CAT_H = 110;
-const HITBOX_FORGIVE = 0.88;
 
 // ═══════════════════════════════════════════
 //  СОСТОЯНИЕ
@@ -119,7 +113,6 @@ let blinkTimer = 0;
 let nextBlink = 90;
 let earTwitch = 0;
 let nextEarTwitch = 60;
-let debugHitboxes = false;
 
 // ═══════════════════════════════════════════
 //  RESET
@@ -188,7 +181,6 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowDown' || e.code === 'KeyS') {
     e.preventDefault(); slide();
   }
-  if (e.code === 'KeyD') debugHitboxes = !debugHitboxes;
 });
 
 // ═══════════════════════════════════════════
@@ -234,213 +226,27 @@ function getBlink() {
   return Math.sin(p * Math.PI);
 }
 
-function circlesHit(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y;
-  const r = a.r + b.r;
-  return dx*dx + dy*dy < r*r;
-}
-
 // ═══════════════════════════════════════════
-//  РАНДОМНЫЙ СПАВН
+//  СПАВН
 // ═══════════════════════════════════════════
-const OBSTACLE_TYPES = [
-  { type:'box',      w:52, h:48, level:'ground', weight:12 },
-  { type:'pepper',   w:34, h:28, level:'ground', weight:10 },
-  { type:'vacuum',   w:64, h:34, level:'ground', weight:10 },
-  { type:'cucumber', w:56, h:22, level:'ground', weight:8  },
-  { type:'book',     w:48, h:26, level:'ground', weight:8  },
-  { type:'bone',     w:40, h:22, level:'ground', weight:6  },
-  { type:'slipper',  w:52, h:36, level:'air',    weight:10 },
-  { type:'plant',    w:44, h:42, level:'air',    weight:8  },
-];
+function spawnObstacle() {
+  const r = Math.random();
+  let o;
+  if      (r < 0.30) o = { type:'box',     w:52, h:48, y:groundY-48 };
+  else if (r < 0.55) o = { type:'pepper',  w:34, h:28, y:groundY-28 };
+  else if (r < 0.78) o = { type:'vacuum',  w:64, h:34, y:groundY-34 };
+  else               o = { type:'slipper', w:52, h:36, y:groundY-70 };
+  o.x = W + 40;
+  G.obstacles.push(o);
 
-function pickWeighted(list) {
-  let total = 0;
-  for (const it of list) total += it.weight;
-  let r = Math.random() * total;
-  for (const it of list) {
-    r -= it.weight;
-    if (r <= 0) return it;
-  }
-  return list[0];
-}
-
-function buildObstacle(def, xOffset) {
-  const scale = 0.85 + Math.random() * 0.45;
-  const w = def.w * scale;
-  const h = def.h * scale;
-  let y;
-
-  if (def.level === 'ground') {
-    y = groundY - h;
-  } else {
-    const variant = Math.random();
-    if (variant < 0.5)      y = groundY - 70;
-    else if (variant < 0.8) y = groundY - 110 - h;
-    else                    y = groundY - 165 - h;
-  }
-
-  return {
-    type: def.type,
-    w, h, y, x: W + 40 + xOffset,
-    wobble: Math.random() < 0.15,
-    wobblePhase: Math.random() * Math.PI * 2,
-    baseY: y,
-    hitFlash: 0,
-  };
-}
-
-function spawnItemPair(offset) {
-  const count = Math.random() < 0.35 ? 2 : 1;
-  for (let i = 0; i < count; i++) {
-    const heights = [groundY - 48, groundY - 90, groundY - 140, groundY - 180];
-    const y = heights[Math.floor(Math.random() * heights.length)];
+  if (Math.random() < 0.55) {
+    const high = Math.random() < 0.5;
     G.items.push({
-      x: W + 90 + offset + Math.random() * 160 + i * 40,
-      y, r: 12 + Math.random() * 3,
-      collected: false,
-      bobPhase: Math.random() * Math.PI * 2,
+      x: W + 90 + Math.random()*120,
+      y: high ? groundY - 130 : groundY - 48,
+      r: 13, collected: false,
     });
   }
-}
-
-function spawnObstacle() {
-  const roll = Math.random();
-
-  if (roll < 0.20 && G.distance > 600) {
-    const count = 2 + Math.floor(Math.random() * 2);
-    let offset = 0;
-    for (let i = 0; i < count; i++) {
-      const def = pickWeighted(OBSTACLE_TYPES);
-      G.obstacles.push(buildObstacle(def, offset));
-      offset += def.w * (1 + Math.random() * 0.6) + 20;
-    }
-    spawnItemPair(offset + 100);
-    return;
-  }
-
-  if (roll < 0.35 && G.distance > 1200) {
-    const grounds = OBSTACLE_TYPES.filter(d => d.level === 'ground');
-    const airs    = OBSTACLE_TYPES.filter(d => d.level === 'air');
-    G.obstacles.push(buildObstacle(pickWeighted(grounds), 0));
-    G.obstacles.push(buildObstacle(pickWeighted(airs), 180));
-    G.obstacles.push(buildObstacle(pickWeighted(grounds), 360));
-    spawnItemPair(500);
-    return;
-  }
-
-  if (roll < 0.45 && G.distance > 2000) {
-    for (let i = 0; i < 3; i++) {
-      G.obstacles.push(buildObstacle(pickWeighted(OBSTACLE_TYPES), i * 200));
-    }
-    return;
-  }
-
-  const def = pickWeighted(OBSTACLE_TYPES);
-  G.obstacles.push(buildObstacle(def, 0));
-  if (Math.random() < 0.6) spawnItemPair(0);
-}
-
-// ═══════════════════════════════════════════
-//  КОЛЛИЗИИ
-// ═══════════════════════════════════════════
-function getCatHitboxes() {
-  const cx = cat.x, by = cat.y;
-
-  if (cat.sliding) {
-    return [
-      { x: cx - 22, y: by - 12, r: 13 },
-      { x: cx,      y: by - 12, r: 13 },
-      { x: cx + 22, y: by - 12, r: 13 },
-    ];
-  }
-
-  const airborne = by < groundY - 2;
-  const squash = airborne ? 0.94 : 1;
-
-  return [
-    { x: cx + 28, y: by - 76 * squash, r: 14 },
-    { x: cx - 3,  y: by - 58 * squash, r: 20 },
-    { x: cx - 26, y: by - 48 * squash, r: 14 },
-  ];
-}
-
-function getObstacleHitboxes(o) {
-  switch (o.type) {
-    case 'pepper':
-    case 'cucumber':
-      return [{ x: o.x + o.w/2, y: o.y + o.h/2, r: Math.max(o.w, o.h) * 0.45 }];
-
-    case 'bone':
-      return [
-        { x: o.x + o.w*0.15, y: o.y + o.h/2, r: o.h * 0.55 },
-        { x: o.x + o.w*0.85, y: o.y + o.h/2, r: o.h * 0.55 },
-      ];
-
-    case 'vacuum':
-      return [
-        { x: o.x + o.w*0.30, y: o.y + o.h/2, r: o.h * 0.55 },
-        { x: o.x + o.w*0.70, y: o.y + o.h/2, r: o.h * 0.55 },
-      ];
-
-    case 'slipper':
-    case 'plant':
-      return [{ x: o.x + o.w/2, y: o.y + o.h/2, r: Math.min(o.w, o.h) * 0.52 }];
-
-    case 'book':
-      return [
-        { x: o.x + o.w*0.30, y: o.y + o.h/2, r: o.h * 0.62 },
-        { x: o.x + o.w*0.70, y: o.y + o.h/2, r: o.h * 0.62 },
-      ];
-
-    case 'box':
-    default:
-      return [
-        { x: o.x + o.w*0.27, y: o.y + o.h/2, r: Math.min(o.w, o.h) * 0.52 },
-        { x: o.x + o.w*0.73, y: o.y + o.h/2, r: Math.min(o.w, o.h) * 0.52 },
-      ];
-  }
-}
-
-function checkCollisions() {
-  if (G.invuln > 0) return;
-
-  const catBoxes = getCatHitboxes();
-  for (const cb of catBoxes) cb.r *= HITBOX_FORGIVE;
-
-  for (const o of G.obstacles) {
-    const obs = getObstacleHitboxes(o);
-    for (const ob of obs) {
-      for (const cb of catBoxes) {
-        if (circlesHit(cb, ob)) {
-          hit();
-          o.hitFlash = 8;
-          return;
-        }
-      }
-    }
-  }
-}
-
-function checkItemPickup() {
-  const cx = cat.x, by = cat.y;
-  const catCenter = cat.sliding
-    ? { x: cx, y: by - 12 }
-    : { x: cx, y: by - 58 };
-  const pickupR = cat.sliding ? 34 : 44;
-
-  for (const it of G.items) {
-    if (it.collected) continue;
-    const dx = catCenter.x - it.x;
-    const dy = catCenter.y - it.y;
-    const rSum = pickupR + it.r;
-    if (dx*dx + dy*dy < rSum*rSum) {
-      it.collected = true;
-      G.distance += 120;
-      burst(it.x, it.y, '#f4b942', 8, 2.5);
-    }
-  }
-  G.items = G.items.filter(i => !i.collected);
 }
 
 // ═══════════════════════════════════════════
@@ -459,7 +265,7 @@ function update(dt) {
       nextBlink = 90 + Math.random() * 240;
     }
   }
-  // ухо
+  // подёргивание уха
   if (earTwitch > 0) earTwitch -= dt;
   else {
     nextEarTwitch -= dt;
@@ -477,7 +283,9 @@ function update(dt) {
 
   cat.vy += GRAVITY * dt;
   cat.y  += cat.vy * dt;
-  if (cat.y >= groundY) { cat.y = groundY; cat.vy = 0; cat.jumps = 0; }
+  if (cat.y >= groundY) {
+    cat.y = groundY; cat.vy = 0; cat.jumps = 0;
+  }
 
   const airborne = cat.y < groundY - 2;
   const targetRot = airborne
@@ -496,23 +304,17 @@ function update(dt) {
   }
   if (G.invuln > 0) G.invuln -= dt;
 
-  // спавн
   G.spawnTimer -= dt;
   if (G.spawnTimer <= 0) {
     spawnObstacle();
-    const base = Math.max(38, 110 - G.speed * 5.5);
-    G.spawnTimer = base * (0.5 + Math.random());
+    const base = Math.max(42, 105 - G.speed * 5.5);
+    G.spawnTimer = base + Math.random() * 45;
   }
 
-  // движение
   const dx = G.speed * dt;
   for (let i = G.obstacles.length - 1; i >= 0; i--) {
     const o = G.obstacles[i];
     o.x -= dx;
-    if (o.wobble) {
-      o.wobblePhase += dt * 0.08;
-      o.y = o.baseY + Math.sin(o.wobblePhase) * 12;
-    }
     if (o.x + o.w < -60) G.obstacles.splice(i, 1);
   }
   for (let i = G.items.length - 1; i >= 0; i--) {
@@ -521,12 +323,29 @@ function update(dt) {
     if (it.x < -60) G.items.splice(i, 1);
   }
 
-  // коллизии
-  checkCollisions();
-  checkItemPickup();
+  const hbW = cat.sliding ? CAT_W * 0.70 : CAT_W * 0.48;
+  const hbH = cat.sliding ? CAT_H * 0.30 : CAT_H * 0.60;
+  const hb = { x: cat.x - hbW/2, y: cat.y - hbH, w: hbW, h: hbH };
 
-  // вспышка
-  for (const o of G.obstacles) if (o.hitFlash > 0) o.hitFlash -= dt;
+  if (G.invuln <= 0) {
+    for (const o of G.obstacles) {
+      if (hb.x < o.x + o.w && hb.x + hb.w > o.x &&
+          hb.y < o.y + o.h && hb.y + hb.h > o.y) {
+        hit(); break;
+      }
+    }
+  }
+
+  for (const it of G.items) {
+    if (it.collected) continue;
+    const cx = hb.x + hb.w/2, cy = hb.y + hb.h/2;
+    if (Math.hypot(cx - it.x, cy - it.y) < it.r + 32) {
+      it.collected = true;
+      G.distance += 120;
+      burst(it.x, it.y, '#f4b942', 8, 2.5);
+    }
+  }
+  G.items = G.items.filter(i => !i.collected);
 
   updateParticles(dt);
   if (G.shake > 0) G.shake -= dt;
@@ -612,17 +431,6 @@ function drawGround() {
 // ═══════════════════════════════════════════
 function drawObstacle(o) {
   ctx.save();
-
-  // вспышка (за препятствием)
-  if (o.hitFlash > 0) {
-    ctx.globalAlpha = o.hitFlash / 8 * 0.6;
-    ctx.fillStyle = '#ff2222';
-    roundRect(ctx, o.x - 4, o.y - 4, o.w + 8, o.h + 8, 6);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  // тень на земле
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
   ctx.beginPath();
   ctx.ellipse(o.x + o.w/2, groundY + 3, o.w*0.5, 5, 0, 0, Math.PI*2);
@@ -637,7 +445,6 @@ function drawObstacle(o) {
     roundRect(ctx, o.x+4, o.y+4, o.w-8, o.h*0.32, 4); ctx.fill();
     ctx.fillStyle = '#a83a14';
     ctx.fillRect(o.x+7, o.y + o.h*0.55, o.w-14, 3);
-
   } else if (o.type === 'pepper') {
     ctx.fillStyle = '#3f7a30';
     ctx.beginPath();
@@ -651,7 +458,6 @@ function drawObstacle(o) {
     ctx.beginPath();
     ctx.ellipse(o.x+o.w/2-4, o.y+o.h/2-4, o.w/5, o.h/6, -0.35, 0, Math.PI*2);
     ctx.fill();
-
   } else if (o.type === 'vacuum') {
     ctx.fillStyle = '#23232c';
     roundRect(ctx, o.x, o.y, o.w, o.h, o.h/2); ctx.fill();
@@ -665,7 +471,6 @@ function drawObstacle(o) {
     ctx.beginPath();
     ctx.arc(o.x+o.w/2, o.y+o.h*0.32, 3, 0, Math.PI*2);
     ctx.fill();
-
   } else if (o.type === 'slipper') {
     ctx.fillStyle = '#8c3e3a';
     ctx.beginPath();
@@ -679,88 +484,7 @@ function drawObstacle(o) {
     ctx.beginPath();
     ctx.ellipse(o.x+o.w/2-8, o.y+o.h/2-2, o.w/3.5, o.h/3.5, -0.2, 0, Math.PI*2);
     ctx.fill();
-
-  } else if (o.type === 'cucumber') {
-    ctx.fillStyle = '#3d7a28';
-    roundRect(ctx, o.x, o.y, o.w, o.h, o.h/2); ctx.fill();
-    ctx.fillStyle = '#5aa83f';
-    roundRect(ctx, o.x + 2, o.y + 1, o.w - 4, o.h - 4, o.h/2); ctx.fill();
-    ctx.fillStyle = '#8fd96a';
-    ctx.beginPath();
-    ctx.ellipse(o.x + o.w * 0.3, o.y + o.h * 0.35, o.w * 0.25, o.h * 0.1, -0.2, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = '#2f5d1e';
-    for (let i = 0; i < 5; i++) {
-      const px = o.x + 8 + i * (o.w - 16) / 4;
-      const py = o.y + (i % 2 ? o.h * 0.7 : o.h * 0.35);
-      ctx.beginPath();
-      ctx.arc(px, py, 1.5, 0, Math.PI*2);
-      ctx.fill();
-    }
-
-  } else if (o.type === 'book') {
-    ctx.fillStyle = '#8b1e1e';
-    roundRect(ctx, o.x, o.y, o.w, o.h, 3); ctx.fill();
-    ctx.fillStyle = '#f0e3c8';
-    ctx.fillRect(o.x + o.w - 5, o.y + 2, 3, o.h - 4);
-    ctx.fillStyle = '#c9b48a';
-    for (let i = 1; i < 4; i++) {
-      ctx.fillRect(o.x + 3, o.y + i * o.h / 4, o.w - 12, 1);
-    }
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(o.x + 4, o.y + 3, o.w - 14, 3);
-
-  } else if (o.type === 'bone') {
-    ctx.fillStyle = '#e8e0c8';
-    ctx.beginPath();
-    ctx.arc(o.x + 6, o.y + o.h * 0.35, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(o.x + 6, o.y + o.h * 0.65, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(o.x + o.w - 6, o.y + o.h * 0.35, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(o.x + o.w - 6, o.y + o.h * 0.65, 6, 0, Math.PI*2); ctx.fill();
-    ctx.fillRect(o.x + 4, o.y + o.h * 0.35, o.w - 8, o.h * 0.30);
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.fillRect(o.x + 6, o.y + o.h * 0.55, o.w - 12, 2);
-
-  } else if (o.type === 'plant') {
-    ctx.fillStyle = '#a0522d';
-    ctx.beginPath();
-    ctx.moveTo(o.x + 4, o.y + o.h * 0.5);
-    ctx.lineTo(o.x + o.w - 4, o.y + o.h * 0.5);
-    ctx.lineTo(o.x + o.w - 8, o.y + o.h);
-    ctx.lineTo(o.x + 8, o.y + o.h);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#7a3a1e';
-    ctx.fillRect(o.x + 2, o.y + o.h * 0.45, o.w - 4, 6);
-    ctx.fillStyle = '#3a8a3a';
-    for (let i = 0; i < 5; i++) {
-      const a = -Math.PI/2 + (i - 2) * 0.5;
-      const lx = o.x + o.w / 2;
-      const ly = o.y + o.h * 0.45;
-      ctx.beginPath();
-      ctx.ellipse(lx + Math.cos(a) * 12, ly + Math.sin(a) * 14,
-                  7, 4, a, 0, Math.PI*2);
-      ctx.fill();
-    }
-    ctx.fillStyle = '#5ab85a';
-    ctx.beginPath();
-    ctx.ellipse(o.x + o.w / 2, o.y + o.h * 0.35, 6, 5, 0, 0, Math.PI*2);
-    ctx.fill();
   }
-
-  // белая обводка при попадании
-  if (o.hitFlash > 0) {
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = o.hitFlash / 8;
-    roundRect(ctx, o.x - 2, o.y - 2, o.w + 4, o.h + 4, 5);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
   ctx.restore();
 }
 
@@ -770,7 +494,7 @@ function drawObstacle(o) {
 function drawFish(it) {
   ctx.save();
   ctx.translate(it.x, it.y);
-  const bob = Math.sin(G.t * 0.09 + (it.bobPhase || 0)) * 3;
+  const bob = Math.sin(G.t * 0.09 + it.x * 0.02) * 3;
   ctx.translate(0, bob);
 
   ctx.globalAlpha = 0.25;
@@ -807,15 +531,17 @@ function drawFish(it) {
 }
 
 // ═══════════════════════════════════════════
-//  КОТ — РИСОВАНИЕ
+//  ГЛАВНЫЙ РЕНДЕР КОТА
 // ═══════════════════════════════════════════
 function drawCat() {
-  const cx = cat.x, by = cat.y, t = G.t;
+  const cx = cat.x;
+  const by = cat.y;
+  const t  = G.t;
   const airborne = cat.y < groundY - 2;
 
   if (G.invuln > 0 && Math.floor(t/4) % 2 === 0) return;
 
-  // тень
+  // Тень
   ctx.fillStyle = 'rgba(0,0,0,0.30)';
   ctx.beginPath();
   const shScale = Math.max(0.4, 1 - (groundY - by)/400);
@@ -825,50 +551,55 @@ function drawCat() {
   ctx.save();
   ctx.translate(cx, by);
 
+  // bob
   const bob = (!airborne && !cat.sliding) ? Math.sin(t * 0.55) * 2.5 : 0;
   ctx.translate(0, bob);
 
   ctx.rotate(cat.rot);
   ctx.scale(cat.sx, cat.sy);
-  ctx.translate(5, 0);
+  ctx.translate(5, 0); // центрируем относительно хитбокса
 
   drawCatBody(t, airborne, cat.sliding);
 
   ctx.restore();
 }
 
+// ─── ТЕЛО КОТА ───
 function drawCatBody(t, airborne, sliding) {
-  const bodyTop = -78, bodyBot = -34;
-  const bodyL = -38, bodyR = 32;
-  const bodyCX = (bodyL + bodyR) / 2;
-  const bodyCY = (bodyTop + bodyBot) / 2;
-  const bodyRW = (bodyR - bodyL) / 2;
-  const bodyRH = (bodyBot - bodyTop) / 2;
+  // Пропорции
+  const bodyTop = -78;
+  const bodyBot = -34;
+  const bodyL   = -38;
+  const bodyR   = 32;
+  const bodyCX  = (bodyL + bodyR) / 2;
+  const bodyCY  = (bodyTop + bodyBot) / 2;
+  const bodyRW  = (bodyR - bodyL) / 2;
+  const bodyRH  = (bodyBot - bodyTop) / 2;
 
   const legPhase = t * 0.42;
 
-  // дальние лапы
+  // 1. Дальние лапы
   if (airborne) {
-    drawLeg(-22, -44, -14, 0, true, C.FUR_DARK);
-    drawLeg( 14, -44, -10, 0, true, C.FUR_DARK);
+    drawLeg(-22, -44, -14, 0, 0, C.FUR_DARK);
+    drawLeg( 14, -44, -10, 0, 0, C.FUR_DARK);
   } else if (sliding) {
-    drawLeg(-26, -30, -8, 0, true, C.FUR_DARK);
-    drawLeg(  8, -30, -8, 0, true, C.FUR_DARK);
+    drawLeg(-26, -30, -8, 0, 0, C.FUR_DARK);
+    drawLeg(  8, -30, -8, 0, 0, C.FUR_DARK);
   } else {
-    drawLeg(-24, bodyBot, 0, legPhase, true, C.FUR_DARK);
-    drawLeg( 12, bodyBot, 0, legPhase + Math.PI, true, C.FUR_DARK);
+    drawLeg(-24, bodyBot, 0, legPhase, 1, C.FUR_DARK);
+    drawLeg( 12, bodyBot, 0, legPhase + Math.PI, 1, C.FUR_DARK);
   }
 
-  // хвост
-  drawCatTail(t, airborne, sliding);
+  // 2. Хвост (за телом)
+  drawTail(t, airborne, sliding);
 
-  // тело
+  // 3. Тело
   ctx.fillStyle = C.FUR;
   ctx.beginPath();
   ctx.ellipse(bodyCX, bodyCY, bodyRW, bodyRH, 0, 0, Math.PI*2);
   ctx.fill();
 
-  // полоски
+  // Полоски на теле
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(bodyCX, bodyCY, bodyRW, bodyRH, 0, 0, Math.PI*2);
@@ -885,28 +616,29 @@ function drawCatBody(t, airborne, sliding) {
   }
   ctx.restore();
 
-  // белая грудка
+  // Белая грудка / живот (справа-снизу)
   ctx.fillStyle = C.WHITE;
   ctx.beginPath();
   ctx.ellipse(bodyR - 6, bodyCY + 8, bodyRW * 0.44, bodyRH * 0.55, -0.15, 0, Math.PI*2);
   ctx.fill();
 
-  // ближние лапы
+  // 4. Ближние лапы
   if (airborne) {
-    drawLeg(-14, -42, -12, 0, false, C.FUR);
-    drawLeg( 20, -42, -8, 0, false, C.FUR);
+    drawLeg(-14, -42, -12, 0, 0, C.FUR);
+    drawLeg( 20, -42, -8, 0, 0, C.FUR);
   } else if (sliding) {
-    drawLeg(-16, -30, -8, 0, false, C.FUR);
-    drawLeg( 20, -30, -8, 0, false, C.FUR);
+    drawLeg(-16, -30, -8, 0, 0, C.FUR);
+    drawLeg( 20, -30, -8, 0, 0, C.FUR);
   } else {
-    drawLeg(-14, bodyBot, 0, legPhase + Math.PI, false, C.FUR);
-    drawLeg( 20, bodyBot, 0, legPhase, false, C.FUR);
+    drawLeg(-14, bodyBot, 0, legPhase + Math.PI, 0, C.FUR);
+    drawLeg( 20, bodyBot, 0, legPhase, 0, C.FUR);
   }
 
-  // голова
+  // 5. Голова
   drawHead(42, -86, 20, t);
 }
 
+// ─── ЛАПА ───
 function drawLeg(x, yTop, yBot, phase, isFar, color) {
   const swing = Math.sin(phase) * 7;
   const lift  = Math.max(0, Math.sin(phase)) * 4;
@@ -928,11 +660,13 @@ function drawLeg(x, yTop, yBot, phase, isFar, color) {
   ctx.lineTo(endX, endY);
   ctx.stroke();
 
+  // Белый носочек
   ctx.fillStyle = C.WHITE;
   ctx.beginPath();
   ctx.ellipse(endX, endY, 7, 4, 0, 0, Math.PI*2);
   ctx.fill();
 
+  // Коготки (видны только если лапа в воздухе)
   if (lift > 1) {
     ctx.strokeStyle = C.CLAW;
     ctx.lineWidth = 1;
@@ -943,14 +677,17 @@ function drawLeg(x, yTop, yBot, phase, isFar, color) {
     }
     ctx.stroke();
   }
+
   ctx.restore();
 }
 
-function drawCatTail(t, airborne, sliding) {
+// ─── ХВОСТ ───
+function drawTail(t, airborne, sliding) {
   const rootX = -38;
   const rootY = sliding ? -40 : -70;
   const baseAngle = airborne ? -1.35 : (sliding ? -0.7 : -0.85);
-  const segCount = 8, segLen = 11;
+  const segCount = 8;
+  const segLen = 11;
   const wagSpeed = 0.25;
   const wagAmp = airborne ? 0.6 : 0.45;
 
@@ -967,7 +704,8 @@ function drawCatTail(t, airborne, sliding) {
   ctx.moveTo(px, py);
   for (let i = 1; i <= segCount; i++) {
     const seg = i / segCount;
-    const a = baseAngle + Math.sin(t * wagSpeed - seg * 1.5) * wagAmp * seg;
+    const a = baseAngle
+      + Math.sin(t * wagSpeed - seg * 1.5) * wagAmp * seg;
     const nx = px + Math.cos(a) * segLen;
     const ny = py + Math.sin(a) * segLen;
     ctx.lineTo(nx, ny);
@@ -976,29 +714,36 @@ function drawCatTail(t, airborne, sliding) {
   }
   ctx.stroke();
 
-  // тёмные кольца
+  // Тёмные кольца
   ctx.strokeStyle = C.FUR_DARK;
   ctx.lineWidth = 3.5;
   for (let i = 2; i < points.length - 1; i += 2) {
     const [x1, y1] = points[i];
     const [x2, y2] = points[i + 1] || points[i];
     const a = Math.atan2(y2 - y1, x2 - x1);
+    const px2 = x1 + Math.cos(a + Math.PI/2) * 6;
+    const py2 = y1 + Math.sin(a + Math.PI/2) * 6;
+    const px3 = x1 - Math.cos(a + Math.PI/2) * 6;
+    const py3 = y1 - Math.sin(a + Math.PI/2) * 6;
     ctx.beginPath();
-    ctx.moveTo(x1 + Math.cos(a + Math.PI/2) * 6, y1 + Math.sin(a + Math.PI/2) * 6);
-    ctx.lineTo(x1 - Math.cos(a + Math.PI/2) * 6, y1 - Math.sin(a + Math.PI/2) * 6);
+    ctx.moveTo(px2, py2);
+    ctx.lineTo(px3, py3);
     ctx.stroke();
   }
 
-  // белый кончик
+  // Белый кончик
   const [endX, endY] = points[points.length - 1];
   ctx.fillStyle = C.WHITE;
   ctx.beginPath();
   ctx.arc(endX, endY, 8, 0, Math.PI*2);
   ctx.fill();
+
   ctx.restore();
 }
 
+// ─── ГОЛОВА ───
 function drawHead(cx, cy, r, t) {
+  // подёргивание уха
   const twitch = earTwitch > 0
     ? Math.sin((1 - earTwitch/12) * Math.PI * 3) * 0.12
     : 0;
@@ -1007,7 +752,8 @@ function drawHead(cx, cy, r, t) {
   ctx.save();
   ctx.translate(0, headBob);
 
-  // левое ухо
+  // ─── УШИ ───
+  // левое
   ctx.save();
   ctx.translate(cx - 12, cy - 18);
   ctx.rotate(twitch * 0.8);
@@ -1017,16 +763,18 @@ function drawHead(cx, cy, r, t) {
   ctx.moveTo(cx - 17, cy - 6);
   ctx.lineTo(cx - 15, cy - 32);
   ctx.lineTo(cx - 1, cy - 14);
-  ctx.closePath(); ctx.fill();
+  ctx.closePath();
+  ctx.fill();
   ctx.fillStyle = C.EAR_PINK;
   ctx.beginPath();
   ctx.moveTo(cx - 14, cy - 11);
   ctx.lineTo(cx - 13, cy - 27);
   ctx.lineTo(cx - 4, cy - 14);
-  ctx.closePath(); ctx.fill();
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 
-  // правое ухо
+  // правое (подёргивается сильнее)
   ctx.save();
   ctx.translate(cx + 10, cy - 18);
   ctx.rotate(twitch);
@@ -1036,22 +784,24 @@ function drawHead(cx, cy, r, t) {
   ctx.moveTo(cx + 3, cy - 14);
   ctx.lineTo(cx + 14, cy - 32);
   ctx.lineTo(cx + 17, cy - 6);
-  ctx.closePath(); ctx.fill();
+  ctx.closePath();
+  ctx.fill();
   ctx.fillStyle = C.EAR_PINK;
   ctx.beginPath();
   ctx.moveTo(cx + 6, cy - 13);
   ctx.lineTo(cx + 13, cy - 27);
   ctx.lineTo(cx + 14, cy - 11);
-  ctx.closePath(); ctx.fill();
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 
-  // голова
+  // ─── ГОЛОВА ───
   ctx.fillStyle = C.FUR;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI*2);
   ctx.fill();
 
-  // полоски на лбу
+  // Полоски на лбу
   ctx.strokeStyle = C.FUR_DARK;
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
@@ -1061,13 +811,13 @@ function drawHead(cx, cy, r, t) {
   ctx.moveTo(cx + 6, cy - r + 4); ctx.lineTo(cx + 6, cy - r + 12);
   ctx.stroke();
 
-  // белая мордашка
+  // Белая мордашка
   ctx.fillStyle = C.WHITE;
   ctx.beginPath();
   ctx.ellipse(cx + 2, cy + 8, 13, 9, 0, 0, Math.PI*2);
   ctx.fill();
 
-  // глаза
+  // ─── ГЛАЗА ───
   const blinkAmt = getBlink();
   const eyeY = cy - 2;
   const eyeLX = cx - 7;
@@ -1083,12 +833,14 @@ function drawHead(cx, cy, r, t) {
     ctx.moveTo(eyeRX - 5, eyeY); ctx.lineTo(eyeRX + 5, eyeY);
     ctx.stroke();
   } else {
+    // Радужка
     ctx.fillStyle = C.EYE;
     ctx.beginPath();
     ctx.arc(eyeLX, eyeY, eyeR, 0, Math.PI*2);
     ctx.arc(eyeRX, eyeY, eyeR, 0, Math.PI*2);
     ctx.fill();
 
+    // Зрачок (сужается при моргании)
     ctx.fillStyle = C.EYE_DARK;
     const pupilH = eyeR * 1.7 * (1 - blinkAmt * 0.7);
     ctx.beginPath();
@@ -1096,6 +848,7 @@ function drawHead(cx, cy, r, t) {
     ctx.ellipse(eyeRX, eyeY, eyeR * 0.55, pupilH / 2, 0, 0, Math.PI*2);
     ctx.fill();
 
+    // Блики
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(eyeLX - 2, eyeY - 2.5, 1.8, 0, Math.PI*2);
@@ -1103,15 +856,16 @@ function drawHead(cx, cy, r, t) {
     ctx.fill();
   }
 
-  // нос
+  // ─── НОС ───
   ctx.fillStyle = C.PINK;
   ctx.beginPath();
   ctx.moveTo(cx + 2, cy + 5);
   ctx.lineTo(cx + 7, cy + 5);
   ctx.lineTo(cx + 4.5, cy + 8);
-  ctx.closePath(); ctx.fill();
+  ctx.closePath();
+  ctx.fill();
 
-  // рот
+  // ─── РОТ ───
   ctx.strokeStyle = C.EYE_DARK;
   ctx.lineWidth = 1.2;
   ctx.beginPath();
@@ -1122,13 +876,15 @@ function drawHead(cx, cy, r, t) {
   ctx.quadraticCurveTo(cx + 8, cy + 12, cx + 10, cy + 10);
   ctx.stroke();
 
-  // усы
+  // ─── УСЫ ───
   ctx.strokeStyle = 'rgba(255,255,255,0.9)';
   ctx.lineWidth = 1.2;
   ctx.lineCap = 'round';
   ctx.beginPath();
+  // слева
   ctx.moveTo(cx - 10, cy + 6); ctx.lineTo(cx - 26, cy + 2);
   ctx.moveTo(cx - 10, cy + 8); ctx.lineTo(cx - 26, cy + 10);
+  // справа
   ctx.moveTo(cx + 14, cy + 6); ctx.lineTo(cx + 30, cy + 2);
   ctx.moveTo(cx + 14, cy + 8); ctx.lineTo(cx + 30, cy + 10);
   ctx.stroke();
@@ -1137,59 +893,36 @@ function drawHead(cx, cy, r, t) {
 }
 
 // ═══════════════════════════════════════════
-//  DEBUG-ХИТБОКСЫ
+//  ЧАСТИЦЫ
 // ═══════════════════════════════════════════
-function drawHitboxes() {
-  if (!debugHitboxes) return;
-  ctx.save();
-
-  if (G.started && !G.dead) {
-    const cbs = getCatHitboxes();
-    for (const cb of cbs) cb.r *= HITBOX_FORGIVE;
-    ctx.strokeStyle = '#00ff88';
-    ctx.lineWidth = 2;
-    for (const cb of cbs) {
-      ctx.beginPath();
-      ctx.arc(cb.x, cb.y, cb.r, 0, Math.PI*2);
-      ctx.stroke();
-    }
-  }
-
-  ctx.strokeStyle = '#ff3355';
-  ctx.lineWidth = 2;
-  for (const o of G.obstacles) {
-    for (const ob of getObstacleHitboxes(o)) {
-      ctx.beginPath();
-      ctx.arc(ob.x, ob.y, ob.r, 0, Math.PI*2);
-      ctx.stroke();
-    }
-  }
-
-  ctx.strokeStyle = '#ffdd55';
-  for (const it of G.items) {
+function drawParticles() {
+  for (const p of G.particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    ctx.fillStyle = p.color;
     ctx.beginPath();
-    ctx.arc(it.x, it.y, it.r, 0, Math.PI*2);
-    ctx.stroke();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
   }
-
-  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 // ═══════════════════════════════════════════
-//  АВАТАРКА
+//  АВАТАРКА В HUD (рисуем кота один раз)
 // ═══════════════════════════════════════════
 function drawAvatar() {
   const av = document.getElementById('avatar');
   const c = av.getContext('2d');
-  c.setTransform(2, 0, 0, 2, 0, 0);
+  c.setTransform(2, 0, 0, 2, 0, 0); // retina
 
   c.fillStyle = '#3a2a45';
   c.fillRect(0, 0, 52, 52);
 
+  // морда кота крупным планом
   c.save();
   c.translate(26, 30);
   c.scale(0.95, 0.95);
 
+  // уши
   c.fillStyle = C.FUR;
   c.beginPath();
   c.moveTo(-12, -8); c.lineTo(-11, -26); c.lineTo(0, -12); c.closePath(); c.fill();
@@ -1201,9 +934,11 @@ function drawAvatar() {
   c.beginPath();
   c.moveTo(6, -13); c.lineTo(12, -22); c.lineTo(12, -12); c.closePath(); c.fill();
 
+  // голова
   c.fillStyle = C.FUR;
   c.beginPath(); c.arc(0, 0, 15, 0, Math.PI*2); c.fill();
 
+  // полоски
   c.strokeStyle = C.FUR_DARK; c.lineWidth = 2.5; c.lineCap = 'round';
   c.beginPath();
   c.moveTo(-5, -14); c.lineTo(-5, -7);
@@ -1211,9 +946,11 @@ function drawAvatar() {
   c.moveTo(5, -14); c.lineTo(5, -7);
   c.stroke();
 
+  // мордашка
   c.fillStyle = C.WHITE;
   c.beginPath(); c.ellipse(0, 7, 10, 7, 0, 0, Math.PI*2); c.fill();
 
+  // глаза
   c.fillStyle = C.EYE;
   c.beginPath();
   c.arc(-5, -1, 4, 0, Math.PI*2);
@@ -1230,25 +967,12 @@ function drawAvatar() {
   c.arc(4, -2.5, 1.3, 0, Math.PI*2);
   c.fill();
 
+  // нос
   c.fillStyle = C.PINK;
   c.beginPath();
   c.moveTo(-1, 4); c.lineTo(3, 4); c.lineTo(1, 6.5); c.closePath(); c.fill();
 
   c.restore();
-}
-
-// ═══════════════════════════════════════════
-//  ЧАСТИЦЫ
-// ═══════════════════════════════════════════
-function drawParticles() {
-  for (const p of G.particles) {
-    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
 }
 
 // ═══════════════════════════════════════════
@@ -1267,6 +991,7 @@ function drawStartScreen() {
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(0, 0, W, H);
 
+  // Кот-превью сверху
   const scale = Math.min(W / 380, 1.4);
   drawCatPreview(W/2, H * 0.32 + 40 * scale, scale, G.t);
 
@@ -1354,7 +1079,6 @@ function render() {
   if (G.started && !G.dead) drawCat();
 
   drawParticles();
-  drawHitboxes();
   ctx.restore();
 
   if (!G.started) drawStartScreen();
