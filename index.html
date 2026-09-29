@@ -35,7 +35,7 @@
   #score { font-variant-numeric:tabular-nums; }
   #hint {
     position:fixed; bottom:8px; left:0; right:0;
-    text-align:center; color:rgba(255,255,255,.35);
+    text-align:center; color:rgba(255,255,255,.3);
     font-size:11px; pointer-events:none; z-index:10;
   }
 </style>
@@ -47,17 +47,17 @@
   <div id="lives"></div>
   <div id="score">0</div>
 </div>
-<div id="hint">Клавиша D — показать хитбоксы</div>
+<div id="hint">D — показать хитбоксы</div>
 <script>
 (() => {
 'use strict';
 
 // ═══════════════════════════════════════════
-//  ПАЛИТРА КОТА
-// ═══════════════════════════════════════════
+//ARK  ПАЛИТРА: КОТА
+// ═════════════════ ══════════════════════════
 const C = {
-  FUR:       '#94876b',
-  FUR_DARK:  '#4f4534',
+  F '#UR:       '#94876b',
+  FUR4_Df4534',
   FUR_LIGHT: '#aaa08a',
   WHITE:     '#faf5eb',
   PINK:      '#e08a8a',
@@ -234,10 +234,156 @@ function getBlink() {
   return Math.sin(p * Math.PI);
 }
 
+// ═══════════════════════════════════════════
+//  КОЛЛИЗИИ
+// ═══════════════════════════════════════════
 function circlesHit(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y;
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
   const r = a.r + b.r;
   return dx*dx + dy*dy < r*r;
+}
+
+function getCatHitboxes() {
+  const cx = cat.x;
+  const by = cat.y;
+
+  if (cat.sliding) {
+    return [
+      { x: cx - 22, y: by - 12, r: 13 },
+      { x: cx,      y: by - 12, r: 13 },
+      { x: cx + 22, y: by - 12, r: 13 },
+    ];
+  }
+
+  const airborne = by < groundY - 2;
+  const squash = airborne ? 0.94 : 1;
+
+  return [
+    { x: cx + 28, y: by - 76 * squash, r: 14 },
+    { x: cx - 3,  y: by - 58 * squash, r: 20 },
+    { x: cx - 26, y: by - 48 * squash, r: 14 },
+  ];
+}
+
+function getObstacleHitboxes(o) {
+  const w = o.w, h = o.h, x = o.x, y = o.y;
+
+  switch (o.type) {
+    case 'pepper':
+    case 'cucumber':
+      return [{ x: x + w/2, y: y + h/2, r: Math.max(w, h) * 0.45 }];
+
+    case 'bone':
+      return [
+        { x: x + w*0.15, y: y + h/2, r: h * 0.55 },
+        { x: x + w*0.85, y: y + h/2, r: h * 0.55 },
+      ];
+
+    case 'vacuum':
+      return [
+        { x: x + w*0.30, y: y + h/2, r: h * 0.55 },
+        { x: x + w*0.70, y: y + h/2, r: h * 0.55 },
+      ];
+
+    case 'slipper':
+    case 'plant':
+      return [{ x: x + w/2, y: y + h/2, r: Math.min(w, h) * 0.52 }];
+
+    case 'book':
+      return [
+        { x: x + w*0.30, y: y + h/2, r: h * 0.62 },
+        { x: x + w*0.70, y: y + h/2, r: h * 0.62 },
+      ];
+
+    case 'box':
+    default:
+      return [
+        { x: x + w*0.27, y: y + h/2, r: Math.min(w, h) * 0.52 },
+        { x: x + w*0.73, y: y + h/2, r: Math.min(w, h) * 0.52 },
+      ];
+  }
+}
+
+function checkCollisions() {
+  if (G.invuln > 0) return;
+
+  const catBoxes = getCatHitboxes();
+  for (const cb of catBoxes) cb.r *= HITBOX_FORGIVE;
+
+  for (let i = 0; i < G.obstacles.length; i++) {
+    const o = G.obstacles[i];
+    const obs = getObstacleHitboxes(o);
+    for (let j = 0; j < obs.length; j++) {
+      for (let k = 0; k < catBoxes.length; k++) {
+        if (circlesHit(catBoxes[k], obs[j])) {
+          hit();
+          o.hitFlash = 8;
+          return;
+        }
+      }
+    }
+  }
+}
+
+function checkItemPickup() {
+  const cx = cat.x;
+  const by = cat.y;
+  const catCenter = cat.sliding
+    ? { x: cx, y: by - 12 }
+    : { x: cx, y: by - 58 };
+  const pickupR = cat.sliding ? 34 : 44;
+
+  for (const it of G.items) {
+    if (it.collected) continue;
+    const dx = catCenter.x - it.x;
+    const dy = catCenter.y - it.y;
+    const rSum = pickupR + it.r;
+    if (dx*dx + dy*dy < rSum*rSum) {
+      it.collected = true;
+      G.distance += 120;
+      burst(it.x, it.y, '#f4b942', 8, 2.5);
+    }
+  }
+  G.items = G.items.filter(i => !i.collected);
+}
+
+function drawHitboxes() {
+  if (!debugHitboxes) return;
+  ctx.save();
+
+  if (G.started && !G.dead) {
+    const cbs = getCatHitboxes();
+    for (const cb of cbs) cb.r *= HITBOX_FORGIVE;
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 2;
+    for (const cb of cbs) {
+      ctx.beginPath();
+      ctx.arc(cb.x, cb.y, cb.r, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  ctx.strokeStyle = '#ff3355';
+  ctx.lineWidth = 2;
+  for (const o of G.obstacles) {
+    const obs = getObstacleHitboxes(o);
+    for (const ob of obs) {
+      ctx.beginPath();
+      ctx.arc(ob.x, ob.y, ob.r, 0, Math.PI*2);
+      ctx.stroke();
+    }
+  }
+
+  ctx.strokeStyle = '#ffdd55';
+  ctx.lineWidth = 2;
+  for (const it of G.items) {
+    ctx.beginPath();
+    ctx.arc(it.x, it.y, it.r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 // ═══════════════════════════════════════════
@@ -342,115 +488,12 @@ function spawnObstacle() {
 }
 
 // ═══════════════════════════════════════════
-//  КОЛЛИЗИИ
-// ═══════════════════════════════════════════
-function getCatHitboxes() {
-  const cx = cat.x, by = cat.y;
-
-  if (cat.sliding) {
-    return [
-      { x: cx - 22, y: by - 12, r: 13 },
-      { x: cx,      y: by - 12, r: 13 },
-      { x: cx + 22, y: by - 12, r: 13 },
-    ];
-  }
-
-  const airborne = by < groundY - 2;
-  const squash = airborne ? 0.94 : 1;
-
-  return [
-    { x: cx + 28, y: by - 76 * squash, r: 14 },
-    { x: cx - 3,  y: by - 58 * squash, r: 20 },
-    { x: cx - 26, y: by - 48 * squash, r: 14 },
-  ];
-}
-
-function getObstacleHitboxes(o) {
-  switch (o.type) {
-    case 'pepper':
-    case 'cucumber':
-      return [{ x: o.x + o.w/2, y: o.y + o.h/2, r: Math.max(o.w, o.h) * 0.45 }];
-
-    case 'bone':
-      return [
-        { x: o.x + o.w*0.15, y: o.y + o.h/2, r: o.h * 0.55 },
-        { x: o.x + o.w*0.85, y: o.y + o.h/2, r: o.h * 0.55 },
-      ];
-
-    case 'vacuum':
-      return [
-        { x: o.x + o.w*0.30, y: o.y + o.h/2, r: o.h * 0.55 },
-        { x: o.x + o.w*0.70, y: o.y + o.h/2, r: o.h * 0.55 },
-      ];
-
-    case 'slipper':
-    case 'plant':
-      return [{ x: o.x + o.w/2, y: o.y + o.h/2, r: Math.min(o.w, o.h) * 0.52 }];
-
-    case 'book':
-      return [
-        { x: o.x + o.w*0.30, y: o.y + o.h/2, r: o.h * 0.62 },
-        { x: o.x + o.w*0.70, y: o.y + o.h/2, r: o.h * 0.62 },
-      ];
-
-    case 'box':
-    default:
-      return [
-        { x: o.x + o.w*0.27, y: o.y + o.h/2, r: Math.min(o.w, o.h) * 0.52 },
-        { x: o.x + o.w*0.73, y: o.y + o.h/2, r: Math.min(o.w, o.h) * 0.52 },
-      ];
-  }
-}
-
-function checkCollisions() {
-  if (G.invuln > 0) return;
-
-  const catBoxes = getCatHitboxes();
-  for (const cb of catBoxes) cb.r *= HITBOX_FORGIVE;
-
-  for (const o of G.obstacles) {
-    const obs = getObstacleHitboxes(o);
-    for (const ob of obs) {
-      for (const cb of catBoxes) {
-        if (circlesHit(cb, ob)) {
-          hit();
-          o.hitFlash = 8;
-          return;
-        }
-      }
-    }
-  }
-}
-
-function checkItemPickup() {
-  const cx = cat.x, by = cat.y;
-  const catCenter = cat.sliding
-    ? { x: cx, y: by - 12 }
-    : { x: cx, y: by - 58 };
-  const pickupR = cat.sliding ? 34 : 44;
-
-  for (const it of G.items) {
-    if (it.collected) continue;
-    const dx = catCenter.x - it.x;
-    const dy = catCenter.y - it.y;
-    const rSum = pickupR + it.r;
-    if (dx*dx + dy*dy < rSum*rSum) {
-      it.collected = true;
-      G.distance += 120;
-      burst(it.x, it.y, '#f4b942', 8, 2.5);
-    }
-  }
-  G.items = G.items.filter(i => !i.collected);
-}
-
-// ═══════════════════════════════════════════
 //  UPDATE
 // ═══════════════════════════════════════════
 function update(dt) {
   G.t += dt;
   G.bgOffset += G.speed * dt * 0.35;
 
-  // мигание
   if (blinkTimer > 0) blinkTimer -= dt;
   else {
     nextBlink -= dt;
@@ -459,7 +502,6 @@ function update(dt) {
       nextBlink = 90 + Math.random() * 240;
     }
   }
-  // ухо
   if (earTwitch > 0) earTwitch -= dt;
   else {
     nextEarTwitch -= dt;
@@ -496,7 +538,6 @@ function update(dt) {
   }
   if (G.invuln > 0) G.invuln -= dt;
 
-  // спавн
   G.spawnTimer -= dt;
   if (G.spawnTimer <= 0) {
     spawnObstacle();
@@ -504,7 +545,6 @@ function update(dt) {
     G.spawnTimer = base * (0.5 + Math.random());
   }
 
-  // движение
   const dx = G.speed * dt;
   for (let i = G.obstacles.length - 1; i >= 0; i--) {
     const o = G.obstacles[i];
@@ -521,11 +561,9 @@ function update(dt) {
     if (it.x < -60) G.items.splice(i, 1);
   }
 
-  // коллизии
   checkCollisions();
   checkItemPickup();
 
-  // вспышка
   for (const o of G.obstacles) if (o.hitFlash > 0) o.hitFlash -= dt;
 
   updateParticles(dt);
@@ -613,7 +651,6 @@ function drawGround() {
 function drawObstacle(o) {
   ctx.save();
 
-  // вспышка (за препятствием)
   if (o.hitFlash > 0) {
     ctx.globalAlpha = o.hitFlash / 8 * 0.6;
     ctx.fillStyle = '#ff2222';
@@ -622,7 +659,6 @@ function drawObstacle(o) {
     ctx.globalAlpha = 1;
   }
 
-  // тень на земле
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
   ctx.beginPath();
   ctx.ellipse(o.x + o.w/2, groundY + 3, o.w*0.5, 5, 0, 0, Math.PI*2);
@@ -751,7 +787,6 @@ function drawObstacle(o) {
     ctx.fill();
   }
 
-  // белая обводка при попадании
   if (o.hitFlash > 0) {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
@@ -807,7 +842,7 @@ function drawFish(it) {
 }
 
 // ═══════════════════════════════════════════
-//  КОТ — РИСОВАНИЕ
+//  КОТ
 // ═══════════════════════════════════════════
 function drawCat() {
   const cx = cat.x, by = cat.y, t = G.t;
@@ -815,7 +850,6 @@ function drawCat() {
 
   if (G.invuln > 0 && Math.floor(t/4) % 2 === 0) return;
 
-  // тень
   ctx.fillStyle = 'rgba(0,0,0,0.30)';
   ctx.beginPath();
   const shScale = Math.max(0.4, 1 - (groundY - by)/400);
@@ -847,7 +881,6 @@ function drawCatBody(t, airborne, sliding) {
 
   const legPhase = t * 0.42;
 
-  // дальние лапы
   if (airborne) {
     drawLeg(-22, -44, -14, 0, true, C.FUR_DARK);
     drawLeg( 14, -44, -10, 0, true, C.FUR_DARK);
@@ -859,16 +892,13 @@ function drawCatBody(t, airborne, sliding) {
     drawLeg( 12, bodyBot, 0, legPhase + Math.PI, true, C.FUR_DARK);
   }
 
-  // хвост
   drawCatTail(t, airborne, sliding);
 
-  // тело
   ctx.fillStyle = C.FUR;
   ctx.beginPath();
   ctx.ellipse(bodyCX, bodyCY, bodyRW, bodyRH, 0, 0, Math.PI*2);
   ctx.fill();
 
-  // полоски
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(bodyCX, bodyCY, bodyRW, bodyRH, 0, 0, Math.PI*2);
@@ -885,13 +915,11 @@ function drawCatBody(t, airborne, sliding) {
   }
   ctx.restore();
 
-  // белая грудка
   ctx.fillStyle = C.WHITE;
   ctx.beginPath();
   ctx.ellipse(bodyR - 6, bodyCY + 8, bodyRW * 0.44, bodyRH * 0.55, -0.15, 0, Math.PI*2);
   ctx.fill();
 
-  // ближние лапы
   if (airborne) {
     drawLeg(-14, -42, -12, 0, false, C.FUR);
     drawLeg( 20, -42, -8, 0, false, C.FUR);
@@ -903,7 +931,6 @@ function drawCatBody(t, airborne, sliding) {
     drawLeg( 20, bodyBot, 0, legPhase, false, C.FUR);
   }
 
-  // голова
   drawHead(42, -86, 20, t);
 }
 
@@ -976,24 +1003,22 @@ function drawCatTail(t, airborne, sliding) {
   }
   ctx.stroke();
 
-  // тёмные кольца
   ctx.strokeStyle = C.FUR_DARK;
   ctx.lineWidth = 3.5;
   for (let i = 2; i < points.length - 1; i += 2) {
-    const [x1, y1] = points[i];
-    const [x2, y2] = points[i + 1] || points[i];
-    const a = Math.atan2(y2 - y1, x2 - x1);
+    const p1 = points[i];
+    const p2 = points[i + 1] || points[i];
+    const a = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]);
     ctx.beginPath();
-    ctx.moveTo(x1 + Math.cos(a + Math.PI/2) * 6, y1 + Math.sin(a + Math.PI/2) * 6);
-    ctx.lineTo(x1 - Math.cos(a + Math.PI/2) * 6, y1 - Math.sin(a + Math.PI/2) * 6);
+    ctx.moveTo(p1[0] + Math.cos(a + Math.PI/2) * 6, p1[1] + Math.sin(a + Math.PI/2) * 6);
+    ctx.lineTo(p1[0] - Math.cos(a + Math.PI/2) * 6, p1[1] - Math.sin(a + Math.PI/2) * 6);
     ctx.stroke();
   }
 
-  // белый кончик
-  const [endX, endY] = points[points.length - 1];
+  const last = points[points.length - 1];
   ctx.fillStyle = C.WHITE;
   ctx.beginPath();
-  ctx.arc(endX, endY, 8, 0, Math.PI*2);
+  ctx.arc(last[0], last[1], 8, 0, Math.PI*2);
   ctx.fill();
   ctx.restore();
 }
@@ -1007,7 +1032,6 @@ function drawHead(cx, cy, r, t) {
   ctx.save();
   ctx.translate(0, headBob);
 
-  // левое ухо
   ctx.save();
   ctx.translate(cx - 12, cy - 18);
   ctx.rotate(twitch * 0.8);
@@ -1026,7 +1050,6 @@ function drawHead(cx, cy, r, t) {
   ctx.closePath(); ctx.fill();
   ctx.restore();
 
-  // правое ухо
   ctx.save();
   ctx.translate(cx + 10, cy - 18);
   ctx.rotate(twitch);
@@ -1045,13 +1068,11 @@ function drawHead(cx, cy, r, t) {
   ctx.closePath(); ctx.fill();
   ctx.restore();
 
-  // голова
   ctx.fillStyle = C.FUR;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI*2);
   ctx.fill();
 
-  // полоски на лбу
   ctx.strokeStyle = C.FUR_DARK;
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
@@ -1061,13 +1082,11 @@ function drawHead(cx, cy, r, t) {
   ctx.moveTo(cx + 6, cy - r + 4); ctx.lineTo(cx + 6, cy - r + 12);
   ctx.stroke();
 
-  // белая мордашка
   ctx.fillStyle = C.WHITE;
   ctx.beginPath();
   ctx.ellipse(cx + 2, cy + 8, 13, 9, 0, 0, Math.PI*2);
   ctx.fill();
 
-  // глаза
   const blinkAmt = getBlink();
   const eyeY = cy - 2;
   const eyeLX = cx - 7;
@@ -1103,7 +1122,6 @@ function drawHead(cx, cy, r, t) {
     ctx.fill();
   }
 
-  // нос
   ctx.fillStyle = C.PINK;
   ctx.beginPath();
   ctx.moveTo(cx + 2, cy + 5);
@@ -1111,7 +1129,6 @@ function drawHead(cx, cy, r, t) {
   ctx.lineTo(cx + 4.5, cy + 8);
   ctx.closePath(); ctx.fill();
 
-  // рот
   ctx.strokeStyle = C.EYE_DARK;
   ctx.lineWidth = 1.2;
   ctx.beginPath();
@@ -1122,7 +1139,6 @@ function drawHead(cx, cy, r, t) {
   ctx.quadraticCurveTo(cx + 8, cy + 12, cx + 10, cy + 10);
   ctx.stroke();
 
-  // усы
   ctx.strokeStyle = 'rgba(255,255,255,0.9)';
   ctx.lineWidth = 1.2;
   ctx.lineCap = 'round';
@@ -1132,45 +1148,6 @@ function drawHead(cx, cy, r, t) {
   ctx.moveTo(cx + 14, cy + 6); ctx.lineTo(cx + 30, cy + 2);
   ctx.moveTo(cx + 14, cy + 8); ctx.lineTo(cx + 30, cy + 10);
   ctx.stroke();
-
-  ctx.restore();
-}
-
-// ═══════════════════════════════════════════
-//  DEBUG-ХИТБОКСЫ
-// ═══════════════════════════════════════════
-function drawHitboxes() {
-  if (!debugHitboxes) return;
-  ctx.save();
-
-  if (G.started && !G.dead) {
-    const cbs = getCatHitboxes();
-    for (const cb of cbs) cb.r *= HITBOX_FORGIVE;
-    ctx.strokeStyle = '#00ff88';
-    ctx.lineWidth = 2;
-    for (const cb of cbs) {
-      ctx.beginPath();
-      ctx.arc(cb.x, cb.y, cb.r, 0, Math.PI*2);
-      ctx.stroke();
-    }
-  }
-
-  ctx.strokeStyle = '#ff3355';
-  ctx.lineWidth = 2;
-  for (const o of G.obstacles) {
-    for (const ob of getObstacleHitboxes(o)) {
-      ctx.beginPath();
-      ctx.arc(ob.x, ob.y, ob.r, 0, Math.PI*2);
-      ctx.stroke();
-    }
-  }
-
-  ctx.strokeStyle = '#ffdd55';
-  for (const it of G.items) {
-    ctx.beginPath();
-    ctx.arc(it.x, it.y, it.r, 0, Math.PI*2);
-    ctx.stroke();
-  }
 
   ctx.restore();
 }
