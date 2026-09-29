@@ -33,11 +33,6 @@
   #lives { letter-spacing:1px; font-size:15px; }
   #lives .lost { opacity:.2; }
   #score { font-variant-numeric:tabular-nums; }
-  #hint {
-    position:fixed; bottom:8px; left:0; right:0;
-    text-align:center; color:rgba(255,255,255,.3);
-    font-size:11px; pointer-events:none; z-index:10;
-  }
 </style>
 </head>
 <body>
@@ -47,18 +42,16 @@
   <div id="lives"></div>
   <div id="score">0</div>
 </div>
-<div id="hint">D — показать хитбоксы</div>
 <script>
 (() => {
 'use strict';
 
 // ═══════════════════════════════════════════
-//ARK  ПАЛИТРА: КОТА
-// ═════════════════ ══════════════════════════
+//  ПАЛИТРА КОТА
+// ═══════════════════════════════════════════
 const C = {
-  F '#UR:       '#94876b',
-  FUR4_Df4534',
-  FUR_LIGHT: '#aaa08a',
+  FUR:       '#94876b',
+  FUR_DARK:  '#4f4534',
   WHITE:     '#faf5eb',
   PINK:      '#e08a8a',
   EAR_PINK:  '#e8a5a5',
@@ -245,8 +238,7 @@ function circlesHit(a, b) {
 }
 
 function getCatHitboxes() {
-  const cx = cat.x;
-  const by = cat.y;
+  const cx = cat.x, by = cat.y;
 
   if (cat.sliding) {
     return [
@@ -327,8 +319,7 @@ function checkCollisions() {
 }
 
 function checkItemPickup() {
-  const cx = cat.x;
-  const by = cat.y;
+  const cx = cat.x, by = cat.y;
   const catCenter = cat.sliding
     ? { x: cx, y: by - 12 }
     : { x: cx, y: by - 58 };
@@ -367,8 +358,7 @@ function drawHitboxes() {
   ctx.strokeStyle = '#ff3355';
   ctx.lineWidth = 2;
   for (const o of G.obstacles) {
-    const obs = getObstacleHitboxes(o);
-    for (const ob of obs) {
+    for (const ob of getObstacleHitboxes(o)) {
       ctx.beginPath();
       ctx.arc(ob.x, ob.y, ob.r, 0, Math.PI*2);
       ctx.stroke();
@@ -387,7 +377,7 @@ function drawHitboxes() {
 }
 
 // ═══════════════════════════════════════════
-//  РАНДОМНЫЙ СПАВН
+//  СЛУЧАЙНЫЙ СПАВН
 // ═══════════════════════════════════════════
 const OBSTACLE_TYPES = [
   { type:'box',      w:52, h:48, level:'ground', weight:12 },
@@ -609,16 +599,6 @@ function drawBackground() {
     ctx.fill();
   }
   ctx.restore();
-
-  ctx.save();
-  ctx.globalAlpha = 0.08;
-  ctx.fillStyle = '#000';
-  const off2 = G.bgOffset * 0.6;
-  for (let i = 0; i < 12; i++) {
-    const bx = ((i*160 - off2) % (W + 320)) - 160;
-    ctx.fillRect(bx, groundY - 60, 8, 60);
-  }
-  ctx.restore();
 }
 
 function drawGround() {
@@ -743,22 +723,14 @@ function drawObstacle(o) {
     for (let i = 1; i < 4; i++) {
       ctx.fillRect(o.x + 3, o.y + i * o.h / 4, o.w - 12, 1);
     }
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
-    ctx.fillRect(o.x + 4, o.y + 3, o.w - 14, 3);
 
   } else if (o.type === 'bone') {
     ctx.fillStyle = '#e8e0c8';
-    ctx.beginPath();
-    ctx.arc(o.x + 6, o.y + o.h * 0.35, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(o.x + 6, o.y + o.h * 0.65, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(o.x + o.w - 6, o.y + o.h * 0.35, 6, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(o.x + o.w - 6, o.y + o.h * 0.65, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(o.x + 6, o.y + o.h * 0.35, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(o.x + 6, o.y + o.h * 0.65, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(o.x + o.w - 6, o.y + o.h * 0.35, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(o.x + o.w - 6, o.y + o.h * 0.65, 6, 0, Math.PI*2); ctx.fill();
     ctx.fillRect(o.x + 4, o.y + o.h * 0.35, o.w - 8, o.h * 0.30);
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.fillRect(o.x + 6, o.y + o.h * 0.55, o.w - 12, 2);
 
   } else if (o.type === 'plant') {
     ctx.fillStyle = '#a0522d';
@@ -777,8 +749,7 @@ function drawObstacle(o) {
       const lx = o.x + o.w / 2;
       const ly = o.y + o.h * 0.45;
       ctx.beginPath();
-      ctx.ellipse(lx + Math.cos(a) * 12, ly + Math.sin(a) * 14,
-                  7, 4, a, 0, Math.PI*2);
+      ctx.ellipse(lx + Math.cos(a) * 12, ly + Math.sin(a) * 14, 7, 4, a, 0, Math.PI*2);
       ctx.fill();
     }
     ctx.fillStyle = '#5ab85a';
